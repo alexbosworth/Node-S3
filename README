@@ -1,0 +1,21 @@
+
+	Alex Bosworth 
+ 
+	A straightforward S3 library (BETA!)
+ 
+  USE: var s3 = new S3(AWS_KEY, AWS_SECRET, {defaultBucket : MY_BUCKET});
+       s3.put(KEY, {data:{},headers:{}}, [bucket]);
+       s3.get(KEY, [bucket]).on('success', function(data) { console.log(data); });
+       (more operations: buckets, info, list)
+  
+  EVENTS: on('complete'): returns raw response
+          on(statusCode): returns response data (json parsed if json header)
+          on('success') : shortcut to on('200')
+          on('failure') : catches all status codes above 300
+
+  Tips:
+  x-amz-storage-class: (STANDARD | REDUCED_REDUNDANCY)
+  x-amz-acl: (private | public-read | public-read-write | authenticated-read | 
+              bucket-owner-read | bucket-owner-full-control )
+
+ REQUIRES: xml2js, node-jquery
