@@ -75,7 +75,7 @@ S3.prototype.put = function(key, file, bucket) {
 	if (typeof(file) != 'object') file = {'data':file};
 	
 	if (!file.headers) file.headers = {};
-	
+		
 	if (typeof(file.data) != 'string') {
 		file.data = new Buffer(JSON.stringify(file.data), encoding='utf8');
 		
@@ -102,11 +102,8 @@ S3.prototype.put = function(key, file, bucket) {
 		var client = this.httpClient(headers);
 		
 		client.on('error', function(err) { 
-		    console.log('PUT FAILURE: ' + err + ' try #' + s3.tries);
-		    
-		    if (s3.tries > 5) return console.log('GIVING UP ON S3 GET');
-		    
-			setTimeout(retry, (s3.tries + 1) * 5 * 1000); });
+			console.log('error' + err + ' - retrying in 5 seconds');
+			setTimeout(retry, 5 * 1000, retry); });
 		
 		var req = client.request('PUT', '/' + key, headers);
 		
@@ -136,13 +133,19 @@ S3.prototype.put = function(key, file, bucket) {
                     s3.emit('success', data, response.headers)
 				});
 			}
+			
+            if (response.statusCode >= '300') {
+                s3.emit('failure', data, response.headers);
+            }
 		});
 	} catch(err) {
+	    this.emit('failure');
 		this.emit('error', err);
 	}
 	
 	return this;
 };
+
 
 S3.prototype.httpClient = function(headers) {    
 	return http.createClient(80, $.cacheDns(headers.Host));
