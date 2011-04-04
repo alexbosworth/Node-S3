@@ -76,7 +76,10 @@ S3.prototype.put = function(key, file, bucket) {
 	
 	if (!file.headers) file.headers = {};
 		
-	if (typeof(file.data) != 'string') {
+	if (file.binaryBuffer) { // easy, no need to convert anything
+	    file.data = file.binaryBuffer;
+    } 
+    else if (typeof(file.data) != 'string') {
 		file.data = new Buffer(JSON.stringify(file.data), encoding='utf8');
 		
 		file.headers['Content-Type'] = "application/json; charset=utf-8;";
