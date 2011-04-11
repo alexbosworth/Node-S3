@@ -1,8 +1,22 @@
-// example require
-// var bucket = require('aws-s3').init(KEY, PASS, BUCKET);
-
-// example get
-// bucket().get(objectName)
+/*
+ *
+ * example require
+ * var bucket = require('aws-s3').init(KEY, PASS, BUCKET);
+ *
+ * example get
+ * bucket().get(objectName).complete(func(){}).success(func(){}).failure(func(){});
+ *
+ * Set up the callbacks by chaining functions off the bucket object
+ *
+ * .complete(func(){}) < fires immediately and includes err, response, [responseData]
+ * .success(func(){}) < if there is no failure, returns [responseData (cleaned)]
+ * .failure(func(){}) < any failure returns err here.
+ *
+ * example put
+ * bucket().put(objectName, data, [options])
+ *
+ * options can include <headers> <meta> <binaryBuffer> 
+ */
 
 var crypto = require('crypto'),
     http = require('http');
@@ -86,8 +100,8 @@ S3.prototype.put = function(key, data, options) {
     
     for (var k in file.meta) file.headers['x-amz-meta-' + k] = file.meta[k];
     
-    file.headers['x-amz-acl'] = self._acl;
-	file.headers['x-amz-storage-class'] = self._storageType;
+    file.headers['x-amz-acl'] = options.acl || self._acl;
+	file.headers['x-amz-storage-class'] = options.storageType || self._storageType;
     
     if (options.binaryBuffer) {
         file.buffer = data;
