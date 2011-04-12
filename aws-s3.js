@@ -184,6 +184,8 @@ S3.prototype._streamingPut = function(key, stream, headers) {
                 
                 console.log(partNum, 'finished');
                 
+                console.log(numCurrentlyUploading(), 'uploading');
+                
                 if (!finishUpload) return;
                 
                 // check all the parts for etags, this means they are complete
