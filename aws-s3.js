@@ -95,15 +95,37 @@ S3.prototype._streamingPut = function(key, stream, headers) {
         parts = {},
         uploadId,
         headers = headers || {},
-        partNumber = 1;
+        partNumber = 1,
+        paused = false;
         
-    stream.pause();
+    var pauseStream = function() { 
+        paused = true; 
+        stream.pause(); 
+    };
+    
+    var resumeStream = function() { 
+        if (!paused) return; 
+        
+        paused = false; 
+        
+        stream.resume(); 
+    };
+    
+    var numCurrentlyUploading = function() {
+        var count = 0;
+
+        for (var part in parts) if (!part[parts]) count++;
+
+        return count;
+    };
+        
+    pauseStream();
             
     self._request('POST', key + '?uploads', headers, function(err, response, data) {
         uploadId = data.match(/UploadId.(.*)..UploadId/)[1],
         finishUpload = false; // signals ends of the stream
                 
-        stream.resume();
+        resumeStream();
         
         var uploadPart = new Buffer(5251337),
             writtenLength = 0;
@@ -114,6 +136,7 @@ S3.prototype._streamingPut = function(key, stream, headers) {
             if (writtenLength + chunk.length > uploadPart.length) {                
                 // create a copy of the uploadBuffer that can get flushed to S3
                 var flushBuffer = new Buffer(uploadPart.length);
+                
                 uploadPart.copy(flushBuffer);
                 
                 // the chunk must be split in twain
@@ -132,6 +155,8 @@ S3.prototype._streamingPut = function(key, stream, headers) {
             chunk.copy(uploadPart, writtenLength, offset);
             
             writtenLength+= (chunk.length - offset);
+            
+            if (numCurrentlyUploading() > 10) pauseStream();
         });
         
         var flushUploadPart = function(partNum, part) {
@@ -151,6 +176,8 @@ S3.prototype._streamingPut = function(key, stream, headers) {
                             
             self._request('PUT', key + '?' + queryStringify(args), reqHeaders, part,
             function completePartUpload(err, response) {
+                if (numCurrentlyUploading() < 10) resumeStream();
+                
                 if (err) console.log(err);
 
                 parts[partNum] = response.headers.etag;
