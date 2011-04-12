@@ -19,7 +19,8 @@
  */
 
 var crypto = require('crypto'),
-    http = require('http');
+    http = require('http'),
+    queryStringify = require('querystring').stringify;
 
 function init(key, pass, bucket, options) {
     options = options || {};
@@ -89,11 +90,126 @@ S3.prototype.get = function(key) {
     return this;
 };
 
+S3.prototype._streamingPut = function(key, stream, headers) {
+    var self = this,
+        parts = {},
+        uploadId,
+        headers = headers || {},
+        partNumber = 1;
+        
+    stream.pause();
+            
+    self._request('POST', key + '?uploads', headers, function(err, response, data) {
+        uploadId = data.match(/UploadId.(.*)..UploadId/)[1],
+        finishUpload = false; // signals ends of the stream
+                
+        stream.resume();
+        
+        var uploadPart = new Buffer(5251337),
+            writtenLength = 0;
+        
+        stream.on('data', function(chunk) {
+            var offset = 0; // where to split a chunk if necessary
+                
+            if (writtenLength + chunk.length > uploadPart.length) {                
+                // create a copy of the uploadBuffer that can get flushed to S3
+                var flushBuffer = new Buffer(uploadPart.length);
+                uploadPart.copy(flushBuffer);
+                
+                // the chunk must be split in twain
+                offset = flushBuffer.length - writtenLength;
+                
+                chunk.copy(flushBuffer, writtenLength, 0, offset + 1);
+
+                flushUploadPart(partNumber, flushBuffer); // send to S3
+                
+                // reset to start
+                partNumber++;
+                uploadPart = new Buffer(uploadPart.length);
+                writtenLength = 0;
+            }
+            
+            chunk.copy(uploadPart, writtenLength, offset);
+            
+            writtenLength+= (chunk.length - offset);
+        });
+        
+        var flushUploadPart = function(partNum, part) {
+            var md5Hash = crypto.createHash('md5');            
+            
+            console.log('uploading', partNum)
+            
+            parts[partNum] = false; // signals part is not completely uploaded
+                        
+            var args = {
+                partNumber: partNum,
+                uploadId: uploadId };
+            
+            var reqHeaders = {
+                'Content-MD5': md5Hash.update(part).digest('base64'),
+                'Content-Length': part.length };
+                            
+            self._request('PUT', key + '?' + queryStringify(args), reqHeaders, part,
+            function completePartUpload(err, response) {
+                if (err) console.log(err);
+
+                parts[partNum] = response.headers.etag;
+                
+                console.log(partNum, 'finished');
+                
+                if (!finishUpload) return;
+                
+                // check all the parts for etags, this means they are complete
+                for (var part in parts) if (!parts[part]) return;
+                
+                self._completeMultipartUpload(key, uploadId, parts);
+            });
+        };
+                
+        stream.on('end', function() { 
+            flushUploadPart(partNumber, uploadPart.slice(0, writtenLength));            
+            
+            finishUpload = true;
+        });
+    });    
+    
+    return self;
+}
+
+S3.prototype._completeMultipartUpload = function(key, uploadId, parts) {
+    var self = this,
+        xml = '<CompleteMultipartUpload>';
+        
+    uploadId = encodeURIComponent(uploadId);
+    
+    for (var part in parts) { 
+        xml+= '<Part>' +
+            '<PartNumber>' + part + '</PartNumber>' +
+            '<ETag>' + parts[part] + '</ETag>' + 
+            '</Part>';
+    }
+    
+    xml = new Buffer(xml + '</CompleteMultipartUpload>', 'binary');
+    
+    var reqHeaders = {
+        'Content-Length': xml.length
+    };
+    
+    self._request('POST', key + '?uploadId=' + uploadId, reqHeaders, xml, 
+    function completeMultipartUploadResponse(err, response, data) {
+        self._completeCbk(err, response, data);
+        
+        if (err) return self._failureCbk(err);
+        
+        return self._successCbk();
+    });
+};
+
 S3.prototype.put = function(key, data, options) {
     var self = this,
         options = options || {},
         file = { data: data };
-    
+            
     file.headers = options.headers || {};
     file.meta = options.meta || {};
     file.buffer = options.binaryBuffer || data;
@@ -102,6 +218,8 @@ S3.prototype.put = function(key, data, options) {
     
     file.headers['x-amz-acl'] = options.acl || self._acl;
 	file.headers['x-amz-storage-class'] = options.storageType || self._storageType;
+	
+	if (options.readStream) return this._streamingPut(key, data, file.headers);
     
     if (options.binaryBuffer) {
         file.buffer = data;
@@ -208,7 +326,7 @@ S3.prototype._request = function(method, path, headers, data, cbk) {
     var self = this;
     
     if (arguments.length == 3) { cbk = headers; headers = {}; }
-    if (arguments.length == 4) { cbk = data; } // these simplify the call proc 
+    if (arguments.length == 4) { cbk = data; data = null; } // these simplify the call proc 
     
     cbk = cbk || new Function();
     
