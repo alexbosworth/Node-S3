@@ -20,16 +20,22 @@
 
 var crypto = require('crypto'),
     http = require('http'),
+    xml2js = require('./vendor/xml2js'); // https://github.com/maqr/node-xml2js.git
     queryStringify = require('querystring').stringify;
+    
+function xmlParse(xmlString, cbk) {
+    var xmlParser = new xml2js.Parser();
+	
+	xmlParser.on('end', function(result) { cbk(result); })
+
+	xmlParser.parseString(xmlString); 			    				    
+}
 
 function init(key, pass, bucket, options) {
     options = options || {};
     
     return function createInstance(newBucket, newOptions) {
-        bucket = newBucket || bucket;
-        options = newOptions || options;
-        
-        return new S3(key, pass, bucket, options);
+        return new S3(key, pass, newBucket || bucket, newOptions || options);
     };
 }
 
@@ -78,10 +84,11 @@ S3.prototype.del = function(key) {
 
 S3.prototype.get = function(key) {
     var self = this;
-    
+        
     self._request('GET', key, function getResponse(err, response, responseData) {
         self._completeCbk(err, response, responseData);
         
+        if (response.statusCode != 200) return self._failureCbk(responseData);        
         if (err) return self._failureCbk(err); 
         
         self._successCbk(responseData);
@@ -89,6 +96,57 @@ S3.prototype.get = function(key) {
     
     return this;
 };
+
+// use bucket().list('dirname/', '/', 500)
+S3.prototype.list = function(prefix, delimiter, count) {
+    var self = this,
+        results = [];
+    
+    var args = {
+        prefix: prefix || '',
+        delimiter: delimiter || '',
+        count: count || 1000
+    };
+    
+    if (count > 1000) args.count = 1000;
+    
+    var list = function() {
+        self._request('GET', '', {}, args, function listResponse(err, response, data) {
+            self._completeCbk(err, response, data);
+                
+            if (response.statusCode != 200) err = data;
+        
+            if (err) return self._failureCbk(err);
+            
+            xmlParse(data, function parsedListResponse(xml) {
+                var prefixes = xml.CommonPrefixes || [],
+    				contents = xml.Contents || [];
+				
+    			prefixes.forEach(function(dir) {
+    				results.push({
+    					type: 'dir',
+    					name: dir.Prefix
+    				});
+    			});
+			
+    			contents.forEach(function(file) { 
+    				results.push({
+    					type: 'file',
+    					key: file.Key,
+    					lastModified: new Date(file.LastModified),
+    					size: parseInt(file.Size),
+    				});			    
+    		    });
+    		    
+                self._successCbk(results);
+            })
+        });        
+    };
+    
+    list();
+    
+    return this;
+}
 
 S3.prototype._streamingPut = function(key, stream, headers) {
     var self = this,
@@ -162,8 +220,6 @@ S3.prototype._streamingPut = function(key, stream, headers) {
         var flushUploadPart = function(partNum, part) {
             var md5Hash = crypto.createHash('md5');            
             
-            console.log('uploading', partNum)
-            
             parts[partNum] = false; // signals part is not completely uploaded
                         
             var args = {
@@ -181,11 +237,7 @@ S3.prototype._streamingPut = function(key, stream, headers) {
                 if (err) console.log(err);
 
                 parts[partNum] = response.headers.etag;
-                
-                console.log(partNum, 'finished');
-                
-                console.log(numCurrentlyUploading(), 'uploading');
-                
+                                
                 if (!finishUpload) return;
                 
                 // check all the parts for etags, this means they are complete
