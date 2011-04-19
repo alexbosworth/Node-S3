@@ -82,6 +82,7 @@ S3.prototype.del = function(key) {
     return this;
 };
 
+// use bucket().get(key).success(function(data) { });
 S3.prototype.get = function(key) {
     var self = this;
         
@@ -108,26 +109,28 @@ S3.prototype.list = function(prefix, delimiter, count) {
         count: count || 1000
     };
     
-    if (count > 1000) args.count = 1000;
-    
-    var list = function() {
+    var list = function() {                
+        args.count = args.count - results.length;
+        
         self._request('GET', '', {}, args, function listResponse(err, response, data) {
             self._completeCbk(err, response, data);
                 
             if (response.statusCode != 200) err = data;
         
             if (err) return self._failureCbk(err);
-            
+                        
             xmlParse(data, function parsedListResponse(xml) {
                 var prefixes = xml.CommonPrefixes || [],
     				contents = xml.Contents || [];
-				
+    				
     			prefixes.forEach(function(dir) {
     				results.push({
     					type: 'dir',
     					name: dir.Prefix
     				});
     			});
+    			
+    			if (contents.Key) contents = [contents]; // boo xml
 			
     			contents.forEach(function(file) { 
     				results.push({
@@ -137,8 +140,12 @@ S3.prototype.list = function(prefix, delimiter, count) {
     					size: parseInt(file.Size),
     				});			    
     		    });
-    		    
-                self._successCbk(results);
+    		        		    
+    		    if (xml.IsTruncated != 'true') return self._successCbk(results);
+    		                    
+                args.marker = contents[contents.length - 1].Key;
+                
+                list();
             })
         });        
     };
@@ -416,6 +423,12 @@ S3.prototype._request = function(method, path, headers, data, cbk) {
     headers['Date'] = new Date().toUTCString(),
     headers['Host'] = self._bucket + '.s3.amazonaws.com';
     headers['Authorization'] = self._getAuthorizationHeader(headers, method, path);
+    
+    if (method == 'GET' && data) {
+        data = queryStringify(data); 
+        
+        path+= '?' + data;
+    }
     
     var req = http.request({
         host: self._bucket + '.s3.amazonaws.com',
