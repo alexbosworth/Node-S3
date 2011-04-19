@@ -1,21 +1,17 @@
+Note: aws-s3.js is the current main line of this lib as the focus is no longer on events.
 
-	Alex Bosworth 
- 
-	A straightforward S3 library (BETA!)
- 
-  USE: var s3 = new S3(AWS_KEY, AWS_SECRET, {defaultBucket : MY_BUCKET});
-       s3.put(KEY, {data:{},headers:{}}, [bucket]);
-       s3.get(KEY, [bucket]).on('success', function(data) { console.log(data); });
-       (more operations: buckets, info, list)
-  
-  EVENTS: on('complete'): returns raw response
-          on(statusCode): returns response data (json parsed if json header)
-          on('success') : shortcut to on('200')
-          on('failure') : catches all status codes above 300
+Node-S3 is a bucket focused S3 lib for Node.js. 
 
-  Tips:
-  x-amz-storage-class: (STANDARD | REDUCED_REDUNDANCY)
-  x-amz-acl: (private | public-read | public-read-write | authenticated-read | 
-              bucket-owner-read | bucket-owner-full-control )
+Make a bucket through the init method:
 
- REQUIRES: xml2js, node-jquery
+var myBucket = require('aws-s3').init(access_key, secret_key, bucket);
+
+myBucket is a method. You call it to make a new request object.
+
+Example get:
+
+myBucket().get(myObject).success(function(obj) { console.log(obj); });
+
+You can add callbacks via success, complete <always fired first>, and failure callbacks.
+
+Success attempts to be a 'smart' callback and returns what you want. Complete returns the raw response.
