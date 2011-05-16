@@ -179,7 +179,7 @@ S3.prototype._streamingPut = function(key, stream, headers) {
     var numCurrentlyUploading = function() {
         var count = 0;
 
-        for (var part in parts) if (!part[parts]) count++;
+        for (var part in parts) if (!parts[part]) count++;
 
         return count;
     };
@@ -239,11 +239,11 @@ S3.prototype._streamingPut = function(key, stream, headers) {
                             
             self._request('PUT', key + '?' + queryStringify(args), reqHeaders, part,
             function completePartUpload(err, response) {
-                if (numCurrentlyUploading() < 10) resumeStream();
+                if (err) return self._failureCbk(err);
                 
-                if (err) console.log(err);
-
                 parts[partNum] = response.headers.etag;
+                
+                if (numCurrentlyUploading() < 10) resumeStream();
                                 
                 if (!finishUpload) return;
                 
