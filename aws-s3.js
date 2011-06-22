@@ -49,7 +49,8 @@ function S3(key, pass, bucket, options) {
     
     this._successCbk = new Function();
     this._failureCbk = new Function();
-    this._completeCbk = new Function();
+    this._completeCbk = new Function(); // this is immediate, before success or failure
+    this._finishedCbk = new Function(); // this is the final thing that happens
     
     return this;
 }
@@ -60,9 +61,20 @@ S3.prototype.head = function(key) {
     self._request('HEAD', key, function headResponse(err, response) {
         self._completeCbk(err, response);
         
-        if (err) return self._failureCbk(err);
+        if (err) return self.failed(err);
+        if (response.statusCode != 200) return self.failed(response.statusCode);
         
-        return self._successCbk(response.headers);
+        var meta = {};
+        
+        for (var header in response.headers) {
+            if (header.substring(0, 10) != 'x-amz-meta') continue;
+            
+            meta[header.substring(11)] = response.headers[header];
+        }
+        
+        self._successCbk(response.headers, meta);
+        
+        self._finishedCbk();
     });
     
     return this;
@@ -74,9 +86,11 @@ S3.prototype.del = function(key) {
     self._request('DELETE', key, function delResponse(err, response, responseData) {
         self._completeCbk(err, response, responseData);
         
-        if (err) return self._failureCbk(err);
+        if (err) return self.failed(err);
         
-        return self._successCbk();
+        self._successCbk();
+        
+        self._finishedCbk();
     });
     
     return this;
@@ -89,10 +103,21 @@ S3.prototype.get = function(key) {
     self._request('GET', key, function getResponse(err, response, responseData) {
         self._completeCbk(err, response, responseData);
         
-        if (response.statusCode != 200) return self._failureCbk(responseData);        
-        if (err) return self._failureCbk(err); 
+        if (err) return self.failed(err); 
+        if (response.statusCode != 200) return self.failed(responseData);        
+        
+        if (/application.json/.test(response.headers['content-type'])) {
+            try {
+                responseData = JSON.parse(responseData);
+            }
+            catch (e) {
+                // wasn't parseable
+            }
+        }
         
         self._successCbk(responseData);
+        
+        self._finishedCbk();
     });
     
     return this;
@@ -117,7 +142,7 @@ S3.prototype.list = function(prefix, delimiter, count) {
                 
             if (response.statusCode != 200) err = data;
         
-            if (err) return self._failureCbk(err);
+            if (err) return self.failed(err);
                         
             xmlParse(data, function parsedListResponse(xml) {
                 var prefixes = xml.CommonPrefixes || [],
@@ -141,7 +166,11 @@ S3.prototype.list = function(prefix, delimiter, count) {
     				});			    
     		    });
     		        		    
-    		    if (xml.IsTruncated != 'true') return self._successCbk(results);
+    		    if (xml.IsTruncated != 'true') {
+    		        self._successCbk(results);
+    		        
+    		        self._finishedCbk();
+		        }
     		                    
                 args.marker = contents[contents.length - 1].Key;
                 
@@ -239,7 +268,7 @@ S3.prototype._streamingPut = function(key, stream, headers) {
                             
             self._request('PUT', key + '?' + queryStringify(args), reqHeaders, part,
             function completePartUpload(err, response) {
-                if (err) return self._failureCbk(err);
+                if (err) return self.failed(err);
                 
                 parts[partNum] = response.headers.etag;
                 
@@ -287,9 +316,11 @@ S3.prototype._completeMultipartUpload = function(key, uploadId, parts) {
     function completeMultipartUploadResponse(err, response, data) {
         self._completeCbk(err, response, data);
         
-        if (err) return self._failureCbk(err);
+        if (err) return self.failed(err);
         
-        return self._successCbk();
+        self._successCbk();
+        
+        self._finishedCbk();
     });
 };
 
@@ -329,9 +360,11 @@ S3.prototype.put = function(key, data, options) {
     function postResponseCbk(err, response, responseData) {        
         self._completeCbk(err, response, responseData);
         
-        if (err) return self._failureCbk(err);
+        if (err) return self.failed(err);
                         
-        return self._successCbk(response);
+        self._successCbk(response);
+        
+        self._finishedCbk();
     });
     
     return this;
@@ -353,6 +386,18 @@ S3.prototype.complete = function(cbk) {
     this._completeCbk = cbk;
     
     return this;
+};
+
+S3.prototype.finished = function(cbk) {
+    this._finishedCbk = cbk;
+    
+    return this;
+};
+
+S3.prototype.failed = function(err) {
+    this._failureCbk();
+    
+    this._finishedCbk();
 };
 
 S3.prototype._getCanonicalizedAmzHeaders = function(headers) {
