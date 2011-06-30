@@ -476,7 +476,6 @@ S3.prototype._request = function(method, path, headers, data, cbk) {
     }
     
     var req = http.request({
-        agent: false,
         host: self._bucket + '.s3.amazonaws.com',
         port: 80,
         path: '/' + path,
