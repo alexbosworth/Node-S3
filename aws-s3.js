@@ -347,7 +347,7 @@ S3.prototype.put = function(key, data, options) {
         file.buffer = new Buffer(data, 'binary');
     }
     else {
-        file.buffer = new Buffer(JSON.stringify(data), 'binary');
+        file.buffer = new Buffer(JSON.stringify(data), 'utf8');
         file.headers['Content-Type'] = "application/json; charset=utf-8;";
     }	
     
