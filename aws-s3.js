@@ -131,12 +131,10 @@ S3.prototype.list = function(prefix, delimiter, count) {
     var args = {
         prefix: prefix || '',
         delimiter: delimiter || '',
-        count: count || 1000
+        'max-keys': count || 1000
     };
     
     var list = function() {                
-        args.count = args.count - results.length;
-        
         self._request('GET', '', {}, args, function listResponse(err, response, data) {
             self._completeCbk(err, response, data);
                 
@@ -163,7 +161,9 @@ S3.prototype.list = function(prefix, delimiter, count) {
     					key: file.Key,
     					lastModified: new Date(file.LastModified),
     					size: parseInt(file.Size),
-    				});			    
+    				});
+    				
+    				args['max-keys']--;
     		    });
     		        		    
     		    if (xml.IsTruncated != 'true') {
@@ -171,11 +171,11 @@ S3.prototype.list = function(prefix, delimiter, count) {
     		        
     		        self._finishedCbk();
 		        }
-    		                    
-                args.marker = contents[contents.length - 1].Key;
+		            		                    
+                if (contents.length) args.marker = contents[contents.length - 1].Key;
                 
-                list();
-            })
+                if (args.marker && args.marker != 'undefined') list();
+            });
         });        
     };
     
