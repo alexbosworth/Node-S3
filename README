@@ -1,3 +1,5 @@
+NOTICE: project is now being continued at https://github.com/alexbosworth/bucket - I'm not continuing with this flavor
+
 Note: aws-s3.js is the current main line of this lib as the focus is no longer on events.
 
 Node-S3 is a bucket focused S3 lib for Node.js. 
